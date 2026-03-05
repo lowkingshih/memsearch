@@ -12,6 +12,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from .config import resolve_env_ref
+
 COMPACT_PROMPT = """\
 You are a knowledge compression assistant. Given the following chunks of text \
 from a knowledge base, create a concise but comprehensive summary that preserves \
@@ -30,6 +32,8 @@ async def compact_chunks(
     llm_provider: str = "openai",
     model: str | None = None,
     prompt_template: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
 ) -> str:
     """Compress *chunks* into a summary using an LLM.
 
@@ -44,6 +48,12 @@ async def compact_chunks(
     prompt_template:
         Custom prompt template.  Must contain ``{chunks}`` placeholder.
         Defaults to the built-in ``COMPACT_PROMPT``.
+    base_url:
+        Custom base URL for OpenAI-compatible API endpoints.  Only used
+        when *llm_provider* is ``"openai"``.
+    api_key:
+        API key for the LLM provider.  Only used when *llm_provider* is
+        ``"openai"``.
 
     Returns
     -------
@@ -57,7 +67,7 @@ async def compact_chunks(
     prompt = template.format(chunks=combined)
 
     if llm_provider == "openai":
-        return await _compact_openai(prompt, model or "gpt-4o-mini")
+        return await _compact_openai(prompt, model or "gpt-4o-mini", base_url=base_url, api_key=api_key)
     elif llm_provider == "anthropic":
         return await _compact_anthropic(prompt, model or "claude-sonnet-4-5-20250929")
     elif llm_provider == "gemini":
@@ -69,13 +79,15 @@ async def compact_chunks(
         )
 
 
-async def _compact_openai(prompt: str, model: str) -> str:
+async def _compact_openai(prompt: str, model: str, *, base_url: str | None = None, api_key: str | None = None) -> str:
     import openai
 
     kwargs: dict = {}
-    base_url = os.environ.get("OPENAI_BASE_URL")
-    if base_url:
-        kwargs["base_url"] = base_url
+    resolved_base_url = resolve_env_ref(base_url) if base_url else os.environ.get("OPENAI_BASE_URL")
+    if resolved_base_url:
+        kwargs["base_url"] = resolved_base_url
+    if api_key:
+        kwargs["api_key"] = resolve_env_ref(api_key)
 
     client = openai.AsyncOpenAI(**kwargs)
     resp = await client.chat.completions.create(
